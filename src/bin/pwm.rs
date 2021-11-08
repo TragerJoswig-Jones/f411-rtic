@@ -35,7 +35,8 @@ mod app {
 
         // Set up the LED and PWM. On the Nucleo-F411RE it's connected to pin PA5.
         let gpioa = ctx.device.GPIOA.split();
-        let led = gpioa.pa5.into_alternate();
+        let led = gpioa.pa5.into_alternate_af1(); // uncommented this still flashed the LED
+        let pwm_pin = gpioa.pa0.into_alternate_af1(); //pa6 didn't work..
         let pwm = Timer::new(ctx.device.TIM2, &clocks).pwm(led, 20.khz());
 
         // Set up the button. On the Nucleo-F411RE it's connected to pin PC13.
@@ -43,7 +44,7 @@ mod app {
         let mut btn = gpioc.pc13.into_pull_up_input();
         btn.make_interrupt_source(&mut sys_cfg);
         btn.enable_interrupt(&mut ctx.device.EXTI);
-        btn.trigger_on_edge(&mut ctx.device.EXTI, Edge::Falling);
+        btn.trigger_on_edge(&mut ctx.device.EXTI, Edge::FALLING);
 
         defmt::info!("Press button!");
         (Shared {}, Local { btn, pwm }, init::Monotonics())
