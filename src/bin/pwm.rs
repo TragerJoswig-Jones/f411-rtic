@@ -4,8 +4,9 @@
 
 use f411_rtic as _; // global logger + panicking-behavior + memory layout
 
-#[rtic::app(device = stm32f4xx_hal::stm32, peripherals = true)]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true)]
 mod app {
+    use embedded_hal::adc::Channel;
     use pwm::C1;
     use stm32f4xx_hal::{
         gpio::{gpioc::PC13, Edge, ExtiPin, Input, PullUp},
@@ -35,16 +36,16 @@ mod app {
 
         // Set up the LED and PWM. On the Nucleo-F411RE it's connected to pin PA5.
         let gpioa = ctx.device.GPIOA.split();
-        let led = gpioa.pa5.into_alternate_af1(); // uncommented this still flashed the LED
-        let pwm_pin = gpioa.pa0.into_alternate_af1(); //pa6 didn't work..
-        let pwm = Timer::new(ctx.device.TIM2, &clocks).pwm(led, 20.khz());
+        let led = gpioa.pa5.into_alternate();
+        let mut pwm = Timer::new(ctx.device.TIM2, &clocks).pwm(led, 1.hz());
+        pwm.enable();
 
         // Set up the button. On the Nucleo-F411RE it's connected to pin PC13.
         let gpioc = ctx.device.GPIOC.split();
         let mut btn = gpioc.pc13.into_pull_up_input();
         btn.make_interrupt_source(&mut sys_cfg);
         btn.enable_interrupt(&mut ctx.device.EXTI);
-        btn.trigger_on_edge(&mut ctx.device.EXTI, Edge::FALLING);
+        btn.trigger_on_edge(&mut ctx.device.EXTI, Edge::Falling);
 
         defmt::info!("Press button!");
         (Shared {}, Local { btn, pwm }, init::Monotonics())
