@@ -29,7 +29,6 @@ mod app {
         stm32::{interrupt, Interrupt, TIM2},
         timer::{Event, Timer, CountDownTimer},
     };
-    const BUF_SIZE: usize = 4;
     const FREQ: u32 = 84_000_000;
 
     #[monotonic(binds = SysTick, default = true)]
@@ -43,7 +42,7 @@ mod app {
     #[local]
     struct Local {
         adc: Adc<ADC1>,
-        pwm: PwmChannels<TIM2, C1>,
+        //pwm: PwmChannels<TIM2, C1>,
     }
 
     #[init]
@@ -60,11 +59,12 @@ mod app {
             .pclk2(FREQ.hz())
             .freeze();
         let mono = DwtSystick::new(&mut ctx.core.DCB, ctx.core.DWT, ctx.core.SYST, FREQ);
-        
+
+            
         let tim2 = &ctx.device.TIM2;
         //tim2.cr2.write(|w| w.mms().update()); // Set interrupt to update
         //tim2.cr1.modify(|_, w| w.cen().enabled());  // enable TIM2
-        let mut timer1 = Timer::new(ctx.device.TIM2, &clocks);
+        //let mut timer1 = Timer::new(ctx.device.TIM2, &clocks);
         //let mut timer = Timer::tim2(ctx.device.TIM2, 5.hz(), clocks, &mut rcc.apb1);
         //timer.listen(Event::TimeOut);
 
@@ -74,22 +74,25 @@ mod app {
 
         let gpioa = ctx.device.GPIOA.split();
         let gpiob = ctx.device.GPIOB.split();
-        let adc_pin = gpiob.pb1.into_analog();
-        let led = gpioa.pa5.into_alternate();
+        //let led = gpioa.pa5.into_alternate();
         
-        let mut pwm = timer1.pwm(led, 1u32.khz());
-        pwm.enable();
+        //let mut pwm = timer1.pwm(led, 1u32.khz());
+        //pwm.enable();
 
+        /* ADC Setup */
+        let adc_pin = gpiob.pb1.into_analog();
         let adc_config = AdcConfig::default()
-            .dma(Dma::Disabled)
             .end_of_conversion_interrupt(Eoc::Conversion)
-            .external_trigger(TriggerMode::BothEdges, ExternalTrigger::Tim_2_cc_2)
-            .scan(Scan::Enabled);
+            .external_trigger(TriggerMode::BothEdges, ExternalTrigger::Tim_2_trgo);
         let mut adc = Adc::adc1(ctx.device.ADC1, true, adc_config);
         adc.configure_channel(&adc_pin, Sequence::One, SampleTime::Cycles_112);
-        adc.enable_temperature_and_vref();
+        adc.enable();
 
-        adc.start_conversion();
+        //adc.start_conversion();
+
+        /* ADC Timer Interrupt */
+        let mut tim = Timer::new(ctx.device.TIM2, &clocks);
+        
 
         // Enable TIM2 Interrupt, Not Needed with RTIC
         /*
@@ -109,7 +112,7 @@ mod app {
             },
             Local {
                 adc,
-                pwm,
+                //pwm,
             },
             init::Monotonics(mono),
         )
@@ -128,16 +131,19 @@ mod app {
     }
 
     // Triggers on ADC DMA transfer complete
-    #[task(binds = ADC, local = [pwm, adc], priority = 2)]
+    //#[task(binds = ADC, local = [pwm, adc], priority = 2)]
+    #[task(binds = ADC, local = [adc], priority = 2)]
     fn on_adc_eoc(mut ctx: on_adc_eoc::Context) {
-        let (adc, pwm) = (ctx.local.adc, ctx.local.pwm);
+        //let (adc, pwm) = (ctx.local.adc, ctx.local.pwm);
+        let adc = ctx.local.adc;
 
         let raw_sample = adc.current_sample();
     
         let voltage = (raw_sample as f32) / ((2_i32.pow(12) - 1) as f32) * 3.3;
-        let max_duty = pwm.get_max_duty();
-        let duty = (voltage / 3.3 * (max_duty as f32)) as u16;
-        pwm.set_duty(duty);
+        defmt::info!("Voltage: {}", voltage);
+        //let max_duty = pwm.get_max_duty();
+        //let duty = (voltage / 3.3 * (max_duty as f32)) as u16;
+        //pwm.set_duty(duty);
 
         //adc.start_conversion();
     }

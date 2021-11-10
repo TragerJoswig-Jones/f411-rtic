@@ -26,7 +26,7 @@ mod app {
         serial::{config::*, Serial, Tx},
         gpio::{gpioc::PC13, Edge, ExtiPin, Input, PullUp},
         pwm::{self, PwmChannels},
-        stm32::{Interrupt, TIM2},
+        stm32::{interrupt, Interrupt, TIM2},
         timer::{Event, Timer},
     };
     const BUF_SIZE: usize = 4;
@@ -53,7 +53,8 @@ mod app {
 
     #[init(local = [tx_buf: [u8; BUF_SIZE] = [0; BUF_SIZE], adc_buf: [u16; 1] = [0u16; 1]])]
     fn init(mut ctx: init::Context) -> (Shared, Local, init::Monotonics) {
-        ctx.device.RCC.ahb1enr.modify(|_, w| w.dma1en().enabled());
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
+        //ctx.device.RCC.ahb1enr.modify(|_, w| w.dma1en().enabled());
         let rcc = ctx.device.RCC.constrain();
         let clocks = rcc
             .cfgr
@@ -65,15 +66,23 @@ mod app {
             .freeze();
         let mono = DwtSystick::new(&mut ctx.core.DCB, ctx.core.DWT, ctx.core.SYST, FREQ);
         
+        let tim2 = &ctx.device.TIM2;
+        tim2.cr2.write(|w| w.mms().update());
+        tim2.cr1.modify(|_, w| w.cen().enabled());  // enable TIM2
+        let mut timer = Timer::new(ctx.device.TIM2, &clocks);
+        //let mut timer = Timer::tim2(ctx.device.TIM2, 5.hz(), clocks, &mut rcc.apb1);
+        //timer.listen(Event::Update);
 
-        let mut tim2 = Timer::new(ctx.device.TIM2, &clocks);
         //tim2.listen(Event::Update);
         //tim2.cr2 = MMS_A::UPDATE;
+        
 
         // Enable TIM2 Interrupt
-        NVIC::unpend(Interrupt::TIM2);
+        //NVIC::unpend(Interrupt::TIM2);
+        //NVIC::unpend(Interrupt::ADC);
         unsafe {
             NVIC::unmask(Interrupt::TIM2);
+            NVIC::unmask(Interrupt::ADC);
         }
 
         let gpioa = ctx.device.GPIOA.split();
@@ -82,7 +91,7 @@ mod app {
         //let tx_pin = gpioa.pa9.into_alternate();
         let led = gpioa.pa5.into_alternate();
         
-        let mut pwm = tim2.pwm(led, 1u32.khz());
+        let mut pwm = timer.pwm(led, 1u32.khz());
         pwm.enable();
 
         /* 
@@ -98,7 +107,7 @@ mod app {
             .external_trigger(TriggerMode::BothEdges, ExternalTrigger::Tim_2_trgo)
             .scan(Scan::Enabled);
         let mut adc = Adc::adc1(ctx.device.ADC1, true, adc_config);
-        adc.configure_channel(&adc_pin, Sequence::One, SampleTime::Cycles_480);
+        adc.configure_channel(&adc_pin, Sequence::One, SampleTime::Cycles_112);
         adc.enable_temperature_and_vref();
         /*
         let adc_transfer =
@@ -114,7 +123,7 @@ mod app {
             Transfer::init_memory_to_peripheral(dma.7, serial, ctx.local.tx_buf, None, dma_config);
         */
         //start_conversion::spawn().ok();
-        //adc.start_conversion();
+        adc.start_conversion();
         //emit_status::spawn().ok();
         (
             Shared {
@@ -132,7 +141,9 @@ mod app {
 
     #[idle]
     fn idle(_: idle::Context) -> ! {
-        loop {}
+        loop {
+
+        }
     }
 
     // TEST: Set register to trigger ADC from TIM2 trigger out
