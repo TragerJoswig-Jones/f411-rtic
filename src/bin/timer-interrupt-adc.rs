@@ -29,7 +29,7 @@ mod app {
         stm32::{interrupt, Interrupt, TIM2},
         timer::{Event, Timer, CountDownTimer},
     };
-    const FREQ: u32 = 84_000_000;
+    const FREQ: u32 = 84_000; //84_000_000; // Larger is faster 84 Mhz results in ADC reading every 55s?
 
     #[monotonic(binds = SysTick, default = true)]
     type SysMono = DwtSystick<FREQ>;
@@ -47,39 +47,64 @@ mod app {
 
     #[init]
     fn init(mut ctx: init::Context) -> (Shared, Local, init::Monotonics) {
-        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
-        //ctx.device.RCC.ahb1enr.modify(|_, w| w.dma1en().enabled());
+
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().clear_bit()); // Sets the bit false
+        
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit()); // Sets the bit true
+
         let rcc = ctx.device.RCC.constrain();
         let clocks = rcc
             .cfgr
             .require_pll48clk()
-            .sysclk(FREQ.hz())
-            .hclk(FREQ.hz())
-            .pclk1((FREQ / 2).hz())
-            .pclk2(FREQ.hz())
+            .sysclk(FREQ.khz())
+            .hclk(FREQ.khz())
+            .pclk1((FREQ / 2).khz())
+            .pclk2(FREQ.khz())
             .freeze();
         let mono = DwtSystick::new(&mut ctx.core.DCB, ctx.core.DWT, ctx.core.SYST, FREQ);
 
-            
-        let tim2 = &ctx.device.TIM2;
-        //tim2.cr2.write(|w| w.mms().update()); // Set interrupt to update
-        //tim2.cr1.modify(|_, w| w.cen().enabled());  // enable TIM2
-        //let mut timer1 = Timer::new(ctx.device.TIM2, &clocks);
-        //let mut timer = Timer::tim2(ctx.device.TIM2, 5.hz(), clocks, &mut rcc.apb1);
-        //timer.listen(Event::TimeOut);
 
+        // Set Timer Registers
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.cen().clear_bit() });  // Counter disabled
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.cms().bits(3) });  // Up-Down Counter w/ interrupts on up and down
+
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.udis().bit(false) }); // Update event enabled
+        //ctx.device.TIM2.psc.modify(|_, w| unsafe { w.psc().bits(1)});  // Sets pre-scale (8399 for 1 kHz)
+        
+        //ctx.device.TIM2.egr.write(|w| w.ug().set_bit()); // Update generation, reinitialize te counter and generates an update of registers
+        
+        //ctx.device.TIM2.arr.modify(|_, w| unsafe { w.arr().bits(9999)});  // Sets ARR register counter limit?
+        //ctx.device.TIM2.dier.modify(|_, w| unsafe { w.uie().set_bit()});  // Enables update interrupt
+        //ctx.device.TIM2.dier.modify(|_, w| unsafe { w.cc2ie().set_bit()});  // Enables Capture/Compare channel 2 interrupt
+        //ctx.device.TIM2.ccr2.modify(|_, w| unsafe { w.ccr().bits(5000)});  // Sets Capture/Compare channel 2 value
+        //ctx.device.TIM2.ccmr1_output().modify(|_, w| unsafe { w.cc2s().bits(0)});
+        
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.arpe().bit(true) }); // Pre- Enabled
+        ctx.device.TIM2.cr2.modify(|_, w| unsafe { w.mms().bits(2) }); // Update event enabled
+     
+        // PWM registers?
+        //ctx.device.TIM2.ccmr1_output().modify(|_, w| unsafe { w.oc1m().bits(6) }); // Set PWM mode 1
+
+        // Enable Timer Counter
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.cen().enabled() });  // Counter enabled
+
+
+        
+        //let mut timer = Timer::new(ctx.device.TIM2, &clocks);
+        //let mut timer = Timer::tim2(ctx.device.TIM2, 5.hz(), clocks, &mut rcc.apb1);
         //tim2.listen(Event::Update);
         //tim2.cr2 = MMS_A::UPDATE;
         
-
+        /*
         let gpioa = ctx.device.GPIOA.split();
-        let gpiob = ctx.device.GPIOB.split();
-        //let led = gpioa.pa5.into_alternate();
-        
-        //let mut pwm = timer1.pwm(led, 1u32.khz());
-        //pwm.enable();
+        let led = gpioa.pa5.into_alternate();
+        let mut pwm = timer.pwm(led, 1u32.hz());
+        pwm.set_duty(pwm.get_max_duty() / 2);
+        pwm.enable();
+        */
 
         /* ADC Setup */
+        let gpiob = ctx.device.GPIOB.split();
         let adc_pin = gpiob.pb1.into_analog();
         let adc_config = AdcConfig::default()
             .end_of_conversion_interrupt(Eoc::Conversion)
@@ -91,18 +116,20 @@ mod app {
         //adc.start_conversion();
 
         /* ADC Timer Interrupt */
-        let mut tim = Timer::new(ctx.device.TIM2, &clocks);
-        tim.listen(Event::TimeOut);
+        //let mut tim = Timer::new(ctx.device.TIM2, &clocks);
+
+
 
         // Enable TIM2 Interrupt, Not Needed with RTIC
-        /*
+        
         NVIC::unpend(Interrupt::TIM2);
         NVIC::unpend(Interrupt::ADC);
         unsafe {
             NVIC::unmask(Interrupt::TIM2);
             NVIC::unmask(Interrupt::ADC);
         }
-        */
+        
+        defmt::info!("Starting...");
 
         (
             Shared {
@@ -125,11 +152,14 @@ mod app {
         }
     }
 
+    /*
     #[task(binds = TIM2, priority = 2)]
     fn test(mut ctx: test::Context) {
         defmt::info!("Test");
     }
+    */
 
+    ///*
     // Triggers on ADC DMA transfer complete
     //#[task(binds = ADC, local = [pwm, adc], priority = 2)]
     #[task(binds = ADC, local = [adc], priority = 2)]
@@ -147,4 +177,5 @@ mod app {
 
         //adc.start_conversion();
     }
+    //*/
 }

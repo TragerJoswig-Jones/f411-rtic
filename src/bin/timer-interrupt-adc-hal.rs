@@ -47,8 +47,13 @@ mod app {
 
     #[init]
     fn init(mut ctx: init::Context) -> (Shared, Local, init::Monotonics) {
-        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
-        //ctx.device.RCC.ahb1enr.modify(|_, w| w.dma1en().enabled());
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().clear_bit()); // Sets the bit false
+        
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.cms().bits(3) });
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.udis().bit(true) });
+
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit()); // Sets the bit true
+        
         let rcc = ctx.device.RCC.constrain();
         let clocks = rcc
             .cfgr
@@ -79,9 +84,14 @@ mod app {
 
         /* Timer Interrupt Setup */
         let mut timer = Timer::new(ctx.device.TIM2, &clocks);
+
         let mut pwm = timer.pwm(led, 1u32.khz());
-        
+
+        // Enable timer 2?
+        //ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
+
         pwm.enable();
+        pwm.set_duty(pwm.get_max_duty() / 2);
         adc.enable();
         //timer.start_count_down(FREQ);
         
@@ -134,6 +144,7 @@ mod app {
 
         let raw_sample = adc.current_sample(); // Clears ADC interrupt
         //TODO: Why is the ADC SOC only being triggered once?
+        // Check is passing the timer without pwm can have the interrupt cleared?
 
         let voltage = (raw_sample as f32) / ((2_i32.pow(12) - 1) as f32) * 3.3;
         defmt::info!("Voltage: {}", voltage);
