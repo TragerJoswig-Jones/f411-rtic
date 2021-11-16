@@ -49,9 +49,6 @@ mod app {
     fn init(mut ctx: init::Context) -> (Shared, Local, init::Monotonics) {
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().clear_bit()); // Sets the bit false
         
-        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.cms().bits(3) });
-        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.udis().bit(true) });
-
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit()); // Sets the bit true
         
         let rcc = ctx.device.RCC.constrain();
@@ -78,12 +75,38 @@ mod app {
             .end_of_conversion_interrupt(Eoc::Conversion)
             .external_trigger(TriggerMode::BothEdges, ExternalTrigger::Tim_2_trgo);
         let mut adc = Adc::adc1(ctx.device.ADC1, true, adc_config);
-        adc.configure_channel(&adc_pin, Sequence::One, SampleTime::Cycles_112);
+        adc.configure_channel(&adc_pin, Sequence::One, SampleTime::Cycles_3);
         //adc.start_conversion();
 
 
         /* Timer Interrupt Setup */
-        let mut timer = Timer::new(ctx.device.TIM2, &clocks);
+        // Changes to registers get overwritten when creating a Timer object
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.cms().bits(3) });
+        ctx.device.TIM2.cr1.modify(|_, w| unsafe { w.udis().bit(false) });
+        ctx.device.TIM2.cr2.modify(|_, w| unsafe { w.mms().bits(2) });
+
+        let mut timer = Timer::new(ctx.device.TIM2, &clocks); // This enables and resets the timer...
+        //timer.tim;  //Becomes a private field that cannot be accessed...
+
+        // Instead need to access it somehow like so... 
+        // Ref using older HAL version: https://github.com/stm32-rs/stm32f4xx-hal/issues/236
+        unsafe {
+            let tim2_regb = &(*(stm32f4xx_hal::stm32::TIM2::ptr()));
+            
+            // Enable Update Interrupt
+            tim2_regb.cr2.modify(|_, w| unsafe { w.mms().bits(2) }); // (2) Update event enabled
+
+            // Enable complementary outputs
+            //tim2_regb.ccer.modify(|_, w| w.cc1ne().set_bit());
+            //tim2_regb.ccer.modify(|_, w| w.cc2ne().set_bit());
+            //tim2_regb.ccer.modify(|_, w| w.cc3ne().set_bit());
+    
+            // Set dead time
+            //tim2_regb.bdtr.modify(|_, w| w.dtg().bits(10));
+    
+            // Center aligned
+            //tim2_regb.cr1.modify(|_, w| w.cms().center_aligned1());
+        }
 
         let mut pwm = timer.pwm(led, 1u32.khz());
 
@@ -147,7 +170,7 @@ mod app {
         // Check is passing the timer without pwm can have the interrupt cleared?
 
         let voltage = (raw_sample as f32) / ((2_i32.pow(12) - 1) as f32) * 3.3;
-        defmt::info!("Voltage: {}", voltage);
+        //defmt::info!("Voltage: {}", voltage);
         let max_duty = pwm.get_max_duty();
         let duty = (voltage / 3.3 * (max_duty as f32)) as u16;
         pwm.set_duty(duty);
