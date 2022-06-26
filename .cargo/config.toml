@@ -3,7 +3,8 @@
 runner = "probe-run --chip STM32F411RETx"
 rustflags = [
   "-C", "linker=flip-link",
-  "-C", "link-arg=-Tlink.x",
+  "-C", "link-arg=-Tlink.x", "-g",
+  # Added "-g" TJJ-6-18-22
   "-C", "link-arg=-Tdefmt.x",
   # This is needed if your flash or ram addresses are not aligned to 0x10000 in memory.x
   # See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
@@ -18,6 +19,9 @@ rustflags = [
 # target = "thumbv7m-none-eabi"    # Cortex-M3
 # target = "thumbv7em-none-eabi"   # Cortex-M4 and Cortex-M7 (no FPU)
 target = "thumbv7em-none-eabihf" # Cortex-M4F and Cortex-M7F (with FPU)
+
+# Debuginfo level for compiler, set to 0 or 1 for viewing local variables
+opt-level=0
 
 [alias]
 rb = "run --bin"

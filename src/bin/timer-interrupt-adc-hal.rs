@@ -1,5 +1,5 @@
-// $ cargo rb adc-serial-dma-tx
-// Transmit serial data using DMA
+// $ cargo rb timer-interrupt-adc-hal
+// 
 #![no_main]
 #![no_std]
 
@@ -7,6 +7,7 @@ use f411_rtic as _; // global logger + panicking-behavior + memory layout
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers=[SPI1, SPI2])]
 mod app {
+    use unifi_gfm::dvoc::build_default_dvoc_controller;  // TEST import unifi_gfm package
     use cortex_m::peripheral::NVIC;
     use dwt_systick_monotonic::DwtSystick;
     use rtic_monotonic::{Milliseconds, Seconds};
@@ -47,6 +48,9 @@ mod app {
 
     #[init]
     fn init(mut ctx: init::Context) -> (Shared, Local, init::Monotonics) {
+
+        let dvoc = build_default_dvoc_controller(80.0_f32, 60.0_f32);  // TEST: Try building a 80V, 60Hz dVOC controller
+
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().clear_bit()); // Sets the bit false
         
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit()); // Sets the bit true
@@ -145,7 +149,6 @@ mod app {
     #[idle]
     fn idle(_: idle::Context) -> ! {
         loop {
-
         }
     }
 
@@ -157,7 +160,7 @@ mod app {
     }
     */
 
-    // Triggers on ADC DMA transfer complete
+    // Triggers on ADC EOC
     #[task(binds = ADC, local = [pwm, adc], priority = 2)]
     //#[task(binds = ADC, local = [adc], priority = 2)]
     fn on_adc_eoc(mut ctx: on_adc_eoc::Context) {
@@ -173,7 +176,7 @@ mod app {
         //defmt::info!("Voltage: {}", voltage);
         let max_duty = pwm.get_max_duty();
         let duty = (voltage / 3.3 * (max_duty as f32)) as u16;
-        pwm.set_duty(duty);
+        pwm.set_duty(duty);  // TODO: When debugging any breakpoint will cause the interrupt to not occur again
 
         //adc.start_conversion();
     }

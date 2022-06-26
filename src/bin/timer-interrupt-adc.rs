@@ -1,5 +1,5 @@
-// $ cargo rb adc-serial-dma-tx
-// Transmit serial data using DMA
+// $ cargo rb timer-interrupt-adc
+// 
 #![no_main]
 #![no_std]
 
